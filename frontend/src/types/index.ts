@@ -33,4 +33,5 @@ export interface MetricsSnapshot {
   successRate: number
   avgLatency: number
   nodeCount: number
+  successRateByType: Record<string, number>
 }

@@ -37,12 +37,39 @@ function mockTasks(nodes: ClusterNode[]): Task[] {
   })
 }
 
+const TASK_TYPES = ['data_sync', 'email_batch', 'report_gen', 'cache_warm', 'log_rotate', 'db_backup', 'index_rebuild', 'health_check']
+
+const TASK_TYPE_SUCCESS_RATES: Record<string, { min: number; max: number }> = {
+  health_check: { min: 95, max: 100 },
+  data_sync: { min: 85, max: 95 },
+  email_batch: { min: 75, max: 90 },
+  report_gen: { min: 70, max: 85 },
+  cache_warm: { min: 65, max: 80 },
+  log_rotate: { min: 60, max: 75 },
+  db_backup: { min: 50, max: 70 },
+  index_rebuild: { min: 55, max: 75 },
+}
+
+function generateSuccessRateByType(): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const type of TASK_TYPES) {
+    const range = TASK_TYPE_SUCCESS_RATES[type]
+    result[type] = range.min + Math.random() * (range.max - range.min)
+  }
+  return result
+}
+
 const initialNodes = mockNodes()
+
+function flattenMetrics(base: Omit<MetricsSnapshot, 'successRateByType'> & { successRateByType: Record<string, number> }) {
+  return { ...base, ...base.successRateByType }
+}
 
 interface TaskStore {
   tasks: Task[]
   nodes: ClusterNode[]
   metrics: MetricsSnapshot[]
+  flatMetrics: any[]
   selectedTask: Task | null
   addTask: (name: string) => void
   retryTask: (id: string) => void
@@ -52,17 +79,22 @@ interface TaskStore {
   addMetric: () => void
 }
 
-export const useTaskStore = create<TaskStore>((set, get) => ({
-  tasks: mockTasks(initialNodes),
-  nodes: initialNodes,
-  metrics: Array.from({ length: 20 }, (_, i) => ({
+export const useTaskStore = create<TaskStore>((set, get) => {
+  const initialMetrics: MetricsSnapshot[] = Array.from({ length: 20 }, (_, i) => ({
     time: Date.now() - (20 - i) * 5000,
     totalTasks: 100 + i * 2,
     runningTasks: 3 + Math.floor(Math.random() * 5),
     successRate: 85 + Math.random() * 14,
     avgLatency: 500 + Math.random() * 2000,
     nodeCount: 5,
-  })),
+    successRateByType: generateSuccessRateByType(),
+  }))
+
+  return {
+  tasks: mockTasks(initialNodes),
+  nodes: initialNodes,
+  metrics: initialMetrics,
+  flatMetrics: initialMetrics.map(flattenMetrics),
   selectedTask: null,
   addTask: (name) => {
     const task: Task = {
@@ -82,14 +114,28 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   selectTask: (t) => set({ selectedTask: t }),
   refreshNodes: () => set({ nodes: mockNodes() }),
   addMetric: () => {
+    const tasks = get().tasks
+    const successRateByType: Record<string, number> = {}
+    for (const type of TASK_TYPES) {
+      const typeTasks = tasks.filter(t => t.name === type)
+      if (typeTasks.length > 0) {
+        const successCount = typeTasks.filter(t => t.status === 'success').length
+        successRateByType[type] = (successCount / typeTasks.length) * 100
+      } else {
+        const range = TASK_TYPE_SUCCESS_RATES[type]
+        successRateByType[type] = range.min + Math.random() * (range.max - range.min)
+      }
+    }
     const m: MetricsSnapshot = {
       time: Date.now(),
-      totalTasks: get().tasks.length,
-      runningTasks: get().tasks.filter(t => t.status === 'running').length,
-      successRate: (get().tasks.filter(t => t.status === 'success').length / Math.max(get().tasks.length, 1)) * 100,
+      totalTasks: tasks.length,
+      runningTasks: tasks.filter(t => t.status === 'running').length,
+      successRate: (tasks.filter(t => t.status === 'success').length / Math.max(tasks.length, 1)) * 100,
       avgLatency: 500 + Math.random() * 2000,
       nodeCount: get().nodes.filter(n => n.status !== 'offline').length,
+      successRateByType,
     }
-    set({ metrics: [...get().metrics.slice(-30), m] })
+    const newMetrics = [...get().metrics.slice(-30), m]
+    set({ metrics: newMetrics, flatMetrics: newMetrics.map(flattenMetrics) })
   },
-}))
+}})
