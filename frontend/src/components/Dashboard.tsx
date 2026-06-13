@@ -57,16 +57,16 @@ export default function Dashboard() {
   const failedCount = store.tasks.filter(t => t.status === 'failed').length
   const runningCount = store.tasks.filter(t => t.status === 'running').length
 
+  const latestMetrics = store.flatMetrics[store.flatMetrics.length - 1]
+
   const taskTypeStats = Object.keys(TASK_TYPE_LABELS).map(type => {
     const typeTasks = store.tasks.filter(t => t.name === type)
     const total = typeTasks.length
     const success = typeTasks.filter(t => t.status === 'success').length
     const failed = typeTasks.filter(t => t.status === 'failed').length
-    const rate = total > 0 ? (success / total) * 100 : 0
+    const rate = latestMetrics?.[type] ?? (total > 0 ? (success / total) * 100 : 0)
     return { type, total, success, failed, rate }
   }).sort((a, b) => a.rate - b.rate)
-
-  const latestMetrics = store.flatMetrics[store.flatMetrics.length - 1]
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -130,29 +130,28 @@ export default function Dashboard() {
               <Col span={24} style={{ marginTop: 16 }}>
                 <Card
                   title="各任务类型成功率排名（越低越容易失败）"
-                  extra={<span style={{ fontSize: 12, color: '#999' }}>按当前成功率升序排列</span>}
+                  extra={<span style={{ fontSize: 12, color: '#999' }}>数据口径与趋势图一致</span>}
                 >
                   <Row gutter={[12, 12]}>
                     {taskTypeStats.map(stat => {
-                      const rate = latestMetrics?.[stat.type] ?? stat.rate
-                      const riskColor = rate >= 90 ? '#52c41a' : rate >= 75 ? '#faad14' : '#ff4d4f'
+                      const riskColor = stat.rate >= 90 ? '#52c41a' : stat.rate >= 75 ? '#faad14' : '#ff4d4f'
                       return (
                         <Col span={6} key={stat.type}>
                           <Card
                             size="small"
                             style={{
                               borderLeft: `4px solid ${TASK_TYPE_COLORS[stat.type]}`,
-                              background: rate < 75 ? 'rgba(255,77,79,0.08)' : undefined
+                              background: stat.rate < 75 ? 'rgba(255,77,79,0.08)' : undefined
                             }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                               <span style={{ fontWeight: 600 }}>{TASK_TYPE_LABELS[stat.type]}</span>
                               <Tag color={riskColor} style={{ margin: 0 }}>
-                                {rate >= 90 ? '稳定' : rate >= 75 ? '关注' : '高风险'}
+                                {stat.rate >= 90 ? '稳定' : stat.rate >= 75 ? '关注' : '高风险'}
                               </Tag>
                             </div>
                             <Progress
-                              percent={Math.round(rate)}
+                              percent={Math.round(stat.rate)}
                               strokeColor={riskColor}
                               size="small"
                               format={v => `${v}%`}
